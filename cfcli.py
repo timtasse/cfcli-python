@@ -21,6 +21,8 @@ CONFIGFILE_SAMPLE = """defaults:
     domain: __SPECIFY_DOMAIN__"""
 DEFAULT_TYPE = "A"
 DEFAULT_TTL = 3600
+TYPE_CHOICES = ["A", "AAAA", "CAA", "CERT", "CNAME", "DNSKEY", "DS", "HTTPS", "LOC", "MX", "NAPTR",
+                "NS", "OPENPGPKEY", "PTR", "SMIMEA", "SRV", "SSHFP", "SVCB", "TLSA", "TXT", "URI"]
 
 class CFAction:
     def __init__(self, namespace: argparse.Namespace, parser: argparse.ArgumentParser):
@@ -81,7 +83,7 @@ class ListCFAction(CFAction):
         else:
             print(f"Zone {self.domain} not found or not accessible")
             exit(1)
-        records_req = self.cf.dns.records.list(zone_id=zone.id)
+        records_req = self.cf.dns.records.list(zone_id=zone.id, type=self.namespace.type if self.namespace.type != "ALL" else NOT_GIVEN)
         if records_req:
             records = []
             for page in records_req.iter_pages():
@@ -108,7 +110,7 @@ class ListCFAction(CFAction):
         table = Table(title=f"DNS Records of Domain {domain}")
         columns = ("Type", "Name", "Value", "TTL", "Proxied", "ID")
         for column in columns:
-            table.add_column(column, no_wrap=True if column != "ID" else False)
+            table.add_column(column, min_width=5, no_wrap=False if column in ("ID", "Value") and not self.namespace.nowrap else True)
         for record in records:
             table.add_row(record.type, record.name, record.content,
                           str(round(record.ttl)) if record.ttl != 1.0 else "Automatic",
@@ -199,7 +201,7 @@ if __name__ == "__main__":
     parser.add_argument("-D", "--debug", help="Enable debug mode", action="store_true")
     sub = parser.add_subparsers(dest="command", required=True, title="Commands")
     add = sub.add_parser("add", help="Add a DNS record")
-    add.add_argument("-t", "--type", help="DNS Type", default=DEFAULT_TYPE)
+    add.add_argument("-t", "--type", help="DNS Type", default=DEFAULT_TYPE, choices=TYPE_CHOICES)
     add.add_argument("-l", "--ttl", help="TTL", default=DEFAULT_TTL, type=int)
     add.add_argument("-p", "--priority", help="Priority")
     add.add_argument("--proxied", help="Record in proxy mode", action="store_true", default=False)
@@ -209,12 +211,14 @@ if __name__ == "__main__":
     add.add_argument("value", help="DNS Value")
     rm = sub.add_parser("rm", help="Remove a DNS record")
     rm.add_argument("record", help="DNS Record Name")
-    rm.add_argument("-t", "--type", help="DNS Type", default="A")
+    rm.add_argument("-t", "--type", help="DNS Type", default=DEFAULT_TYPE, choices=TYPE_CHOICES)
     ls = sub.add_parser("ls", help="List DNS records")
     ls.add_argument("search", help="Search Term, substrings or RegEx (only valid with regex option)", default="", nargs="?")
     ls.add_argument("--regex", help="Enable RegEx mode for search", action="store_true", default=False)
+    ls.add_argument("-t", "--type", help="DNS Type, special Type ALL to match all Types", default="ALL", choices=TYPE_CHOICES + ["ALL"])
+    ls.add_argument("--nowrap", help="Do not wrap result", action="store_true", default=False)
     edit = sub.add_parser("edit", help="Edit a DNS record")
-    edit.add_argument("-t", "--type", help="DNS Type", default=DEFAULT_TYPE)
+    edit.add_argument("-t", "--type", help="DNS Type", default=DEFAULT_TYPE, choices=TYPE_CHOICES)
     edit.add_argument("-l", "--ttl", help="TTL", default=DEFAULT_TTL, type=int)
     edit.add_argument("-p", "--priority", help="Priority")
     edit.add_argument("--proxied", help="Record in proxy mode", action="store_true", default=False)
