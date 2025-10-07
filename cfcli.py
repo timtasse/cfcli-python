@@ -4,6 +4,7 @@ import argparse
 import os
 import datetime
 import re
+import signal
 
 try:
     import yaml
@@ -61,6 +62,13 @@ class RemoveCFAction(CFAction):
         else:
             print(f"Zone {self.domain} not found or not accessible")
             exit(1)
+        if self.namespace.id:
+            result = self.cf.dns.records.delete(zone_id=zone.id, dns_record_id=self.namespace.record)
+            if self.namespace.debug:
+                print(f"Deleted record: {result}")
+            if result.id:
+                print(f"Successfully deleted DNS record {self.namespace.record}")
+                exit()
         if len((records := self.cf.dns.records.list(zone_id=zone.id, type=self.namespace.type, name=self.namespace.record)).result) > 0:
             record = next(iter(records))
             result = self.cf.dns.records.delete(zone_id=zone.id, dns_record_id=record.id)
@@ -154,23 +162,33 @@ class ModifyCFAction(CFAction):
         else:
             print(f"Zone {self.domain} not found or not accessible")
             exit(1)
-        if len((records := self.cf.dns.records.list(zone_id=zone.id, type=self.namespace.type, name=self.namespace.record)).result) > 0:
-            record = next(iter(records))
-            if self.namespace.debug:
-                print(f"Record found: {record}")
-            response = self.cf.dns.records.edit(record.id,
-                                       zone_id=zone.id,
-                                       type=self.namespace.type,
-                                       name=self.namespace.record,
-                                       ttl=self.namespace.ttl if self.namespace.ttl != DEFAULT_TTL else NOT_GIVEN,
-                                       content=self.namespace.value if self.namespace.value else NOT_GIVEN,
-                                       tags=self.namespace.tag if self.namespace.tag else NOT_GIVEN,
-                                       comment=self.namespace.comment if self.namespace.comment else NOT_GIVEN,
-                                       priority=self.namespace.priority if self.namespace.priority else NOT_GIVEN)
-            if (datetime.datetime.now(tz=datetime.UTC) - response.modified_on).seconds < 2:
-                print(f"Successfully modified DNS record {self.namespace.record}")
-            if self.namespace.debug:
-                print(f"Record modify called: {response}")
+        if self.namespace.id:
+            self.edit_record(self.cf.dns.records.get(dns_record_id=self.namespace.record, zone_id=zone.id), zone)
+        else:
+            records = self.cf.dns.records.list(zone_id=zone.id, type=self.namespace.type, name={"contains": self.namespace.record}).result
+            if len(records) < 1:
+                print("no records found")
+                exit(0)
+            if len(records) > 1:
+                input(f"You modify {len(records)} entries, do you really want to proceed?\nPress Enter to confirm or Ctrl+C for cancel")
+            for record in records:
+                if self.namespace.debug:
+                    print(f"Record found: {record}")
+                self.edit_record(record, zone)
+    def edit_record(self, record, zone):
+        response = self.cf.dns.records.edit(record.id,
+                                   zone_id=zone.id,
+                                   type=self.namespace.type,
+                                   ttl=self.namespace.ttl,
+                                   name=NOT_GIVEN,
+                                   content=self.namespace.value if self.namespace.value else NOT_GIVEN,
+                                   tags=self.namespace.tag if self.namespace.tag else NOT_GIVEN,
+                                   comment=self.namespace.comment if self.namespace.comment else NOT_GIVEN,
+                                   priority=self.namespace.priority if self.namespace.priority else NOT_GIVEN)
+        if (datetime.datetime.now(tz=datetime.UTC) - response.modified_on).seconds < 2:
+            print(f"Successfully modified DNS record {record.name}")
+        if self.namespace.debug:
+            print(f"Record modify called: {response}")
 
 
 class ZonesCFAction(CFAction):
@@ -186,7 +204,7 @@ class ZonesCFAction(CFAction):
         table.add_column("Active", no_wrap=True)
         table.add_column("ID")
         for zone in zones:
-            table.add_row(zone.name, zone.plan["name"], zone.status, zone.id)
+            table.add_row(zone.name, zone.plan.legacy_id, zone.status, zone.id)
         console = Console()
         try:
             console.print(table)
@@ -194,8 +212,13 @@ class ZonesCFAction(CFAction):
             pass
 
 
+def call_sigint_handler(signum, frame):
+    print()
+    exit()
+
 
 if __name__ == "__main__":
+    signal.signal(signal.SIGINT, call_sigint_handler)
     parser = argparse.ArgumentParser("Cloudflare DNS CLI")
     parser.add_argument("-d", "--domain", help="Domain name")
     parser.add_argument("-D", "--debug", help="Enable debug mode", action="store_true")
@@ -212,6 +235,7 @@ if __name__ == "__main__":
     rm = sub.add_parser("rm", help="Remove a DNS record")
     rm.add_argument("record", help="DNS Record Name")
     rm.add_argument("-t", "--type", help="DNS Type", default=DEFAULT_TYPE, choices=TYPE_CHOICES)
+    rm.add_argument("--id", help="Cloudflare ID", action="store_true", default=False)
     ls = sub.add_parser("ls", help="List DNS records")
     ls.add_argument("search", help="Search Term, substrings or RegEx (only valid with regex option)", default="", nargs="?")
     ls.add_argument("--regex", help="Enable RegEx mode for search", action="store_true", default=False)
@@ -219,8 +243,9 @@ if __name__ == "__main__":
     ls.add_argument("--nowrap", help="Do not wrap result", action="store_true", default=False)
     edit = sub.add_parser("edit", help="Edit a DNS record")
     edit.add_argument("-t", "--type", help="DNS Type", default=DEFAULT_TYPE, choices=TYPE_CHOICES)
-    edit.add_argument("-l", "--ttl", help="TTL", default=DEFAULT_TTL, type=int)
+    edit.add_argument("-l", "--ttl", help="TTL", default=NOT_GIVEN, type=int)
     edit.add_argument("-p", "--priority", help="Priority")
+    edit.add_argument("--id", help="Cloudflare ID", action="store_true", default=False)
     edit.add_argument("--proxied", help="Record in proxy mode", action="store_true", default=False)
     edit.add_argument("-m", "--comment", help="Comment")
     edit.add_argument("-T", "--tag", help="Tag, can be used multiple times", action="append")
