@@ -17,6 +17,8 @@ except ImportError:
     print("Please install cloudflare>=4.0, rich and PyYAML")
     exit(1)
 
+__version__ = "1.0.0"
+
 CONFIGFILE_SAMPLE = """defaults:
     token: __SPECIFY_TOKEN__
     domain: __SPECIFY_DOMAIN__"""
@@ -220,6 +222,7 @@ def call_sigint_handler(signum, frame):
 if __name__ == "__main__":
     signal.signal(signal.SIGINT, call_sigint_handler)
     parser = argparse.ArgumentParser("Cloudflare DNS CLI")
+    parser.add_argument('--version', action='version', version='%(prog)s {version}'.format(version=__version__))
     parser.add_argument("-c", "--context", help="use specific context in config file", default="defaults")
     parser.add_argument("-d", "--domain", help="Domain name")
     parser.add_argument("-D", "--debug", help="Enable debug mode", action="store_true")
