@@ -45,7 +45,7 @@ class CFAction:
     def get_domain(self) -> str:
         with open(os.path.expanduser("~/.cfcli.yml"), "r") as f:
             values = yaml.safe_load(f)
-            read_domain = values["defaults"].get("domain", None)
+            read_domain = values[self.namespace.context].get("domain", None)
         if self.namespace.domain:
             return self.namespace.domain
         if read_domain is not None:
