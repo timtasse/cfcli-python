@@ -35,7 +35,7 @@ class CFAction:
         if os.path.exists((path := os.path.expanduser("~/.cfcli.yml"))):
             with open(path, "r") as f:
                 values = yaml.safe_load(f)
-                return values["defaults"]["token"]
+                return values[self.namespace.context]["token"]
         else:
             print("Configfile ~/.cfcli.yml not exists, please create it, sample follows")
             print(CONFIGFILE_SAMPLE)
@@ -220,6 +220,7 @@ def call_sigint_handler(signum, frame):
 if __name__ == "__main__":
     signal.signal(signal.SIGINT, call_sigint_handler)
     parser = argparse.ArgumentParser("Cloudflare DNS CLI")
+    parser.add_argument("-c", "--context", help="use specific context in config file", default="defaults")
     parser.add_argument("-d", "--domain", help="Domain name")
     parser.add_argument("-D", "--debug", help="Enable debug mode", action="store_true")
     sub = parser.add_subparsers(dest="command", required=True, title="Commands")
